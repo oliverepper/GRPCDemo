@@ -21,7 +21,7 @@ class GRPCServer {
             if let group = dependencies[id] as? MultiThreadedEventLoopGroup {
                 return group
             } else {
-                let group = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
+                let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
                 dependencies[id] = group
                 return group
             }
@@ -43,25 +43,24 @@ class GRPCServer {
         server.whenFailure { error in
             subject.send(completion: .failure(error))
         }
-
+        
         return subject.eraseToAnyPublisher()
     }
-
+    
     static func stopServer(id: AnyHashable) -> AnyPublisher<AnyHashable?, Error> {
-        return Deferred {
-            Future { promise in
-                guard let group = dependencies[id] as? MultiThreadedEventLoopGroup else {
-                    promise(.success(nil))
-                    return
-                }
-
-                group.shutdownGracefully { error in
-                    if let error = error {
-                        promise(.failure(error))
-                    } else {
-                        dependencies[id] = nil
-                        promise(.success(id))
-                    }
+        return Future { promise in
+            guard let group = dependencies[id] as? MultiThreadedEventLoopGroup else {
+                promise(.success(nil))
+                return
+            }
+            
+            group.shutdownGracefully { error in
+                if let error = error {
+                    promise(.failure(error))
+                } else {
+                    os_log("Server stopped", type: .debug)
+                    dependencies[id] = nil
+                    promise(.success(id))
                 }
             }
         }.eraseToAnyPublisher()
