@@ -33,8 +33,8 @@ class GRPCServer {
         server.map {
             $0.channel.localAddress
         }.whenSuccess { address in
-            os_log("Server started: %@", type: .debug, String(describing: address))
             if let address = address {
+                os_log("Server started %@", type: .debug, String(describing: address))
                 subject.send(address.description)
             }
             subject.send(completion: .finished)
@@ -43,17 +43,17 @@ class GRPCServer {
         server.whenFailure { error in
             subject.send(completion: .failure(error))
         }
-        
+
         return subject.eraseToAnyPublisher()
     }
-    
+
     static func stopServer(id: AnyHashable) -> AnyPublisher<AnyHashable?, Error> {
         return Future { promise in
             guard let group = dependencies[id] as? MultiThreadedEventLoopGroup else {
                 promise(.success(nil))
                 return
             }
-            
+
             group.shutdownGracefully { error in
                 if let error = error {
                     promise(.failure(error))
