@@ -6,28 +6,66 @@
 //
 
 import Combine
+import ComposableArchitecture
 import Foundation
 import GRPC
 import NIO
+import SwiftProtobuf
 import os.log
 
+private struct Dependencies {
+    let group: MultiThreadedEventLoopGroup
+    var simpleMessageSubscriber: Effect<ServerAction, Never>.Subscriber?
+    var port: Int?
+}
+
+private var dependencies: [AnyHashable: Dependencies] = [:]
+
+class SimpleServiceProvider: SimpleProvider {
+    private let id: AnyHashable
+
+    init(id: AnyHashable) {
+        self.id = id
+    }
+
+    var interceptors: SimpleServerInterceptorFactoryProtocol?
+
+    func send(request: SimpleMessage, context: StatusOnlyCallContext) -> EventLoopFuture<Google_Protobuf_Empty> {
+        os_log("Received SimpleMessage: %@", type: .debug, request.text)
+
+        DispatchQueue.main.async {
+            dependencies[self.id]?.simpleMessageSubscriber?.send(.messageReceived(request.text))
+        }
+
+        return context.eventLoop.makeSucceededFuture(.init())
+    }
+}
+
+
 class GRPCServer {
-    static var dependencies: [AnyHashable: Any] = [:]
+    static func subscribeSimpleService(id: AnyHashable) -> Effect<ServerAction, Never> {
+        return Effect.run { subscriber in
+            dependencies[id]?.simpleMessageSubscriber = subscriber
+
+            return AnyCancellable {
+                dependencies[id]?.simpleMessageSubscriber = nil
+            }
+        }
+    }
 
     static func startServer(id: AnyHashable) -> AnyPublisher<String, Error> {
         let subject = PassthroughSubject<String, Error>()
 
-        func getGroup() -> MultiThreadedEventLoopGroup {
-            if let group = dependencies[id] as? MultiThreadedEventLoopGroup {
-                return group
-            } else {
-                let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-                dependencies[id] = group
-                return group
-            }
-        }
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        dependencies[id] = Dependencies(
+            group: group,
+            simpleMessageSubscriber: nil
+        )
 
-        let server = Server.insecure(group: getGroup())
+        let server = Server.insecure(group: group)
+            .withServiceProviders([
+                SimpleServiceProvider(id: id)
+            ])
             .bind(host: "localhost", port: 0)
 
         server.map {
@@ -35,6 +73,7 @@ class GRPCServer {
         }.whenSuccess { address in
             if let address = address {
                 os_log("Server started %@", type: .debug, String(describing: address))
+                dependencies[id]?.port = address.port
                 subject.send(address.description)
             }
             subject.send(completion: .finished)
@@ -49,7 +88,7 @@ class GRPCServer {
 
     static func stopServer(id: AnyHashable) -> AnyPublisher<AnyHashable?, Error> {
         return Future { promise in
-            guard let group = dependencies[id] as? MultiThreadedEventLoopGroup else {
+            guard let group = dependencies[id]?.group else {
                 promise(.success(nil))
                 return
             }
@@ -66,26 +105,35 @@ class GRPCServer {
         }.eraseToAnyPublisher()
     }
 
-    static func stopServerOld(id: AnyHashable) -> AnyPublisher<AnyHashable, Error> {
-        let subject = CurrentValueSubject<AnyHashable, Error>(AnyHashable.init(1))
+    static func sendSimpleMessage(id: AnyHashable, text: String) {
+        guard let port = dependencies[id]?.port else { return }
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
 
-        guard let group = dependencies[id] as? MultiThreadedEventLoopGroup else {
-            subject.send(completion: .finished)
-            return subject.eraseToAnyPublisher()
+        let connection = ClientConnection(
+            configuration: .init(
+                target: .hostAndPort("localhost", port),
+                eventLoopGroup: group
+            )
+        )
+
+        let client = SimpleClient(channel: connection)
+
+        let message = SimpleMessage.with { message in
+            message.text = text
         }
 
-        group.shutdownGracefully { error in
-            if let error = error {
-                subject.send(completion: .failure(error))
-            } else {
-                dependencies[id] = nil
-                DispatchQueue.main.async { // Dirty Fix. Should not be necessary
-                    subject.send(id)
-                    subject.send(completion: .finished)
-                }
+        let request = client.send(message)
+
+        request.response.whenComplete { result in
+            switch result {
+            case .success:
+                print("Yeah!")
+            case let .failure(error):
+                print(error)
             }
         }
 
-        return subject.eraseToAnyPublisher()
+        let status = try? request.status.wait()
+        os_log("Completed with: %@", type: .debug, status.debugDescription)
     }
 }

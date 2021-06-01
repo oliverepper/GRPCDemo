@@ -3,14 +3,19 @@ import SwiftUI
 import Combine
 
 public struct ServerState: Equatable {
+    public init(isRunning: Bool = false, address: String? = nil, error: ServerError? = nil, message: String = "", receivedMessage: String? = nil) {
+        self.isRunning = isRunning
+        self.address = address
+        self.error = error
+        self.message = message
+        self.receivedMessage = receivedMessage
+    }
+
     var isRunning = false
     var address: String? = nil
-    var error: ServerError?
-
-    public init(isRuning: Bool = false, address: String? = nil) {
-        self.isRunning = isRuning
-        self.address = address
-    }
+    var error: ServerError? = nil
+    var message: String = ""
+    var receivedMessage: String? = nil
 }
 
 public enum ServerAction: Equatable {
@@ -19,6 +24,13 @@ public enum ServerAction: Equatable {
 
     case stopServerBtnTapped
     case serverStopped(Result<AnyHashable?, ServerError>)
+
+    case messageChanged(String)
+    case sendMessageBtnTapped
+
+    case messageReceived(String)
+
+    case subscriptionCreated
 }
 
 public enum ServerError: Error, Equatable {
@@ -29,10 +41,20 @@ public enum ServerError: Error, Equatable {
 public struct ServerEnvironment {
     var mainQueue: AnySchedulerOf<DispatchQueue> = .main
     var startServer: (AnyHashable) -> Effect<String, ServerError> = { _ in fatalError() }
+    var createSubscription: (AnyHashable) -> Effect<ServerAction, Never> = { _ in fatalError() }
+    var sendMessage: (AnyHashable, String) -> Void = { _,_ in }
     var stopServer: (AnyHashable) -> Effect<AnyHashable?, ServerError> = { _ in fatalError() }
 
     func startServer(id: AnyHashable) -> Effect<String, ServerError> {
         startServer(id)
+    }
+
+    func createSubscription(id: AnyHashable) -> Effect<ServerAction, Never> {
+        createSubscription(id)
+    }
+
+    func sendMessage(id: AnyHashable, text: String) -> Void {
+        sendMessage(id, text)
     }
 
     func stopServer(id: AnyHashable) -> Effect<AnyHashable?, ServerError> {
@@ -50,6 +72,12 @@ extension ServerEnvironment {
             .receive(on: DispatchQueue.global(qos: .background))
             .setFailureType(to: ServerError.self)
             .eraseToEffect()
+    } createSubscription: { id in
+        print("Creating subscription for \(id.hashValue)")
+        return Just(ServerAction.messageReceived("Hurra Fuckers!"))
+            .eraseToEffect()
+    } sendMessage: { id, text in
+        print("Sending message: \(text)")
     } stopServer: { id in
         print("Stopping server: \(id.hashValue)")
         return Just(id)
@@ -67,6 +95,10 @@ extension ServerEnvironment {
         return GRPCServer.startServer(id: id)
             .mapError { _ in ServerError.couldNotStart }
             .eraseToEffect()
+    } createSubscription: { id in
+        return GRPCServer.subscribeSimpleService(id: id)
+    } sendMessage: { id, text in
+        GRPCServer.sendSimpleMessage(id: id, text: text)
     } stopServer: { id in
         return GRPCServer.stopServer(id: id)
             .mapError { _ in ServerError.couldNotStop }
@@ -80,10 +112,14 @@ public let serverReducer = Reducer<ServerState, ServerAction, ServerEnvironment>
     switch action {
 
     case .startServerBtnTapped:
-        return environment.startServer(id: GRPCServerId())
-            .receive(on: environment.mainQueue)
-            .catchToEffect()
-            .map(ServerAction.serverStarted)
+        return .merge (
+            environment.startServer(id: GRPCServerId())
+                .receive(on: environment.mainQueue)
+                .catchToEffect()
+                .map(ServerAction.serverStarted),
+
+            environment.createSubscription(id: GRPCServerId())
+        )
 
     case .serverStarted(.success(let address)):
         state.isRunning = true
@@ -112,6 +148,26 @@ public let serverReducer = Reducer<ServerState, ServerAction, ServerEnvironment>
         return .fireAndForget {
             print(error)
         }
+
+    case .sendMessageBtnTapped:
+        let message = state.message
+        state.message = ""
+        return .fireAndForget {
+            environment.sendMessage(id: GRPCServerId(), text: message)
+        }
+
+    case .messageChanged(let message):
+        state.message = message
+        return .none
+
+    case .messageReceived(let message):
+        state.receivedMessage = message
+        return .none
+
+    case .subscriptionCreated:
+        return .fireAndForget {
+            print("Subscription created.")
+        }
     }
 }
 
@@ -125,21 +181,31 @@ public struct ContentView: View {
     public var body: some View {
         WithViewStore(store) { viewStore in
             VStack {
-                if viewStore.state.isRunning {
-                    if let address = viewStore.state.address {
+                if viewStore.isRunning {
+                    if let address = viewStore.address {
                         Text("Server running: \(address)")
                     }
                 } else {
                     Text("Server stopped")
                 }
+                if let message = viewStore.receivedMessage {
+                    Text(message)
+                }
                 HStack {
                     Button("Start Server") {
                         viewStore.send(.startServerBtnTapped)
-                    }.disabled(viewStore.state.isRunning)
+                    }.disabled(viewStore.isRunning)
                     Button("Stop Server") {
                         viewStore.send(.stopServerBtnTapped)
-                    }.disabled(!viewStore.state.isRunning)
+                    }.disabled(!viewStore.isRunning)
                 }
+                TextField("Enter message", text: viewStore.binding(
+                    get: { $0.message },
+                    send: { .messageChanged($0) }
+                ))
+                Button("Send simple message") {
+                    viewStore.send(.sendMessageBtnTapped)
+                }.disabled(!viewStore.isRunning)
             }.padding()
         }
     }
