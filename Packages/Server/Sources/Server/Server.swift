@@ -3,12 +3,13 @@ import SwiftUI
 import Combine
 
 public struct ServerState: Equatable {
-    public init(isRunning: Bool = false, address: String? = nil, error: ServerError? = nil, message: String = "", receivedMessage: String? = nil) {
+    public init(isRunning: Bool = false, address: String? = nil, error: ServerError? = nil, message: String = "", receivedMessage: String? = nil, alert: AlertState<ServerAction>? = nil) {
         self.isRunning = isRunning
         self.address = address
         self.error = error
         self.message = message
         self.receivedMessage = receivedMessage
+        self.alert = alert
     }
 
     var isRunning = false
@@ -16,6 +17,7 @@ public struct ServerState: Equatable {
     var error: ServerError? = nil
     var message: String = ""
     var receivedMessage: String? = nil
+    var alert: AlertState<ServerAction>? = nil
 }
 
 public enum ServerAction: Equatable {
@@ -29,6 +31,8 @@ public enum ServerAction: Equatable {
     case sendMessageBtnTapped
 
     case messageReceived(String)
+    case alertDismissBtnTapped
+    case alertDismissed(String)
 
     case createSubscriptionBtnTapped
     case subscriptionCreated
@@ -154,7 +158,9 @@ public let serverReducer = Reducer<ServerState, ServerAction, ServerEnvironment>
         return .none
 
     case .messageReceived(let message):
-        state.receivedMessage = message
+        state.alert = .init(title: .init("Message Received"),
+                            message: TextState(message),
+                            dismissButton: .default(TextState("Ok"), send: .alertDismissed(message)))
         return .none
 
     case .subscriptionCreated:
@@ -164,6 +170,14 @@ public let serverReducer = Reducer<ServerState, ServerAction, ServerEnvironment>
 
     case .createSubscriptionBtnTapped:
         return environment.createSubscription(id: GRPCServerId())
+
+    case .alertDismissBtnTapped:
+        state.alert = nil
+        return .none
+
+    case .alertDismissed(let message):
+        state.receivedMessage = message
+        return .none
     }
 }
 
@@ -190,10 +204,14 @@ public struct ContentView: View {
                 HStack {
                     Button("Start Server") {
                         viewStore.send(.startServerBtnTapped)
-                    }.disabled(viewStore.isRunning)
+                    }
+                    .disabled(viewStore.isRunning)
+                    .keyboardShortcut("r")
                     Button("Stop Server") {
                         viewStore.send(.stopServerBtnTapped)
-                    }.disabled(!viewStore.isRunning)
+                    }
+                    .disabled(!viewStore.isRunning)
+                    .keyboardShortcut("p")
                 }
                 TextField("Enter message", text: viewStore.binding(
                     get: { $0.message },
@@ -201,8 +219,15 @@ public struct ContentView: View {
                 ))
                 Button("Send simple message") {
                     viewStore.send(.sendMessageBtnTapped)
-                }.disabled(!viewStore.isRunning)
-            }.padding()
+                }
+                .disabled(!viewStore.isRunning)
+                .keyboardShortcut("s")
+            }
+            .padding()
+            .alert(
+                self.store.scope(state: \.alert),
+                dismiss: .alertDismissBtnTapped
+            )
         }
     }
 }
