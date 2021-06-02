@@ -30,6 +30,7 @@ public enum ServerAction: Equatable {
 
     case messageReceived(String)
 
+    case createSubscriptionBtnTapped
     case subscriptionCreated
 }
 
@@ -68,21 +69,17 @@ extension ServerEnvironment {
     ) { id in
         print("Starting server \(id.hashValue)")
         return Just("mocked_address")
-            .delay(for: 0.5, scheduler: RunLoop.main)
-            .receive(on: DispatchQueue.global(qos: .background))
             .setFailureType(to: ServerError.self)
             .eraseToEffect()
     } createSubscription: { id in
         print("Creating subscription for \(id.hashValue)")
-        return Just(ServerAction.messageReceived("Hurra Fuckers!"))
+        return Just(ServerAction.subscriptionCreated)
             .eraseToEffect()
     } sendMessage: { id, text in
         print("Sending message: \(text)")
     } stopServer: { id in
         print("Stopping server: \(id.hashValue)")
         return Just(id)
-            .delay(for: 0.5, scheduler: RunLoop.main)
-            .receive(on: DispatchQueue.global(qos: .background))
             .setFailureType(to: ServerError.self)
             .eraseToEffect()
     }
@@ -112,19 +109,15 @@ public let serverReducer = Reducer<ServerState, ServerAction, ServerEnvironment>
     switch action {
 
     case .startServerBtnTapped:
-        return .merge (
-            environment.startServer(id: GRPCServerId())
+        return environment.startServer(id: GRPCServerId())
                 .receive(on: environment.mainQueue)
                 .catchToEffect()
-                .map(ServerAction.serverStarted),
-
-            environment.createSubscription(id: GRPCServerId())
-        )
+                .map(ServerAction.serverStarted)
 
     case .serverStarted(.success(let address)):
         state.isRunning = true
         state.address = address
-        return .none
+        return environment.createSubscription(id: GRPCServerId())
 
     case .serverStarted(.failure(let error)):
         state.error = error
@@ -168,6 +161,9 @@ public let serverReducer = Reducer<ServerState, ServerAction, ServerEnvironment>
         return .fireAndForget {
             print("Subscription created.")
         }
+
+    case .createSubscriptionBtnTapped:
+        return environment.createSubscription(id: GRPCServerId())
     }
 }
 

@@ -12,6 +12,9 @@ final class ServerTests: XCTestCase {
                                                     Just("mocked_address")
                                                         .setFailureType(to: ServerError.self)
                                                         .eraseToEffect()
+                                                }, createSubscription: { _ in
+                                                    Just(ServerAction.subscriptionCreated)
+                                                        .eraseToEffect()
                                                 })
 
         let store = TestStore(initialState: ServerState(),
@@ -26,6 +29,10 @@ final class ServerTests: XCTestCase {
             $0.isRunning = true
             $0.address = "mocked_address"
         }
+
+        scheduler.advance()
+
+        store.receive(.subscriptionCreated)
     }
 
     func testServerStopped() {
@@ -58,6 +65,9 @@ final class ServerTests: XCTestCase {
         let startFail = ServerEnvironment(mainQueue: scheduler.eraseToAnyScheduler(),
                                           startServer: { _ in
                                             return .init(error: .couldNotStart)
+                                          }, createSubscription: { _ in
+                                            Just(ServerAction.subscriptionCreated)
+                                                .eraseToEffect()
                                           })
 
         let store = TestStore(initialState: ServerState(),
