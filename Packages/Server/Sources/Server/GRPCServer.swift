@@ -53,43 +53,40 @@ class GRPCServer {
         }
     }
 
-    static func startServer(id: AnyHashable) -> AnyPublisher<String, Error> {
-        let subject = PassthroughSubject<String, Error>()
+    static func startServer(id: AnyHashable) -> Future<String, Error> {
+        return Future { promise in
+            let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+            dependencies[id] = Dependencies(
+                group: group,
+                simpleMessageSubscriber: nil
+            )
 
-        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-        dependencies[id] = Dependencies(
-            group: group,
-            simpleMessageSubscriber: nil
-        )
+            let server = Server.insecure(group: group)
+                .withServiceProviders([
+                    SimpleServiceProvider(id: id)
+                ])
+                .bind(host: "localhost", port: 0)
 
-        let server = Server.insecure(group: group)
-            .withServiceProviders([
-                SimpleServiceProvider(id: id)
-            ])
-            .bind(host: "localhost", port: 0)
-
-        server.map {
-            $0.channel.localAddress
-        }.whenSuccess { address in
-            if let address = address {
-                os_log("Server started %@", type: .debug, String(describing: address))
-                dependencies[id]?.port = address.port
-                subject.send(address.description)
+            server.map {
+                $0.channel.localAddress
+            }.whenSuccess { address in
+                if let address = address {
+                    os_log("Server started %@", type: .debug, String(describing: address))
+                    dependencies[id]?.port = address.port
+                    promise(.success(address.description))
+                }
             }
-            subject.send(completion: .finished)
-        }
 
-        server.whenFailure { error in
-            subject.send(completion: .failure(error))
+            server.whenFailure { error in
+                promise(.failure(error))
+            }
         }
-
-        return subject.eraseToAnyPublisher()
     }
 
-    static func stopServer(id: AnyHashable) -> AnyPublisher<AnyHashable?, Error> {
+    static func stopServer(id: AnyHashable) -> Future<AnyHashable, Error> {
         return Future { promise in
             guard let group = dependencies[id]?.group else {
-                promise(.success(nil))
+                promise(.failure(ServerError.couldNotStop))
                 return
             }
 
@@ -102,7 +99,7 @@ class GRPCServer {
                     promise(.success(id))
                 }
             }
-        }.eraseToAnyPublisher()
+        }
     }
 
     static func sendSimpleMessage(id: AnyHashable, text: String) {

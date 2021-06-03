@@ -25,7 +25,7 @@ public enum ServerAction: Equatable {
     case serverStarted(Result<String, ServerError>)
 
     case stopServerBtnTapped
-    case serverStopped(Result<AnyHashable?, ServerError>)
+    case serverStopped(Result<AnyHashable, ServerError>)
 
     case messageChanged(String)
     case sendMessageBtnTapped
@@ -48,7 +48,7 @@ public struct ServerEnvironment {
     var startServer: (AnyHashable) -> Effect<String, ServerError> = { _ in fatalError() }
     var createSubscription: (AnyHashable) -> Effect<ServerAction, Never> = { _ in fatalError() }
     var sendMessage: (AnyHashable, String) -> Void = { _,_ in }
-    var stopServer: (AnyHashable) -> Effect<AnyHashable?, ServerError> = { _ in fatalError() }
+    var stopServer: (AnyHashable) -> Effect<AnyHashable, ServerError> = { _ in fatalError() }
 
     func startServer(id: AnyHashable) -> Effect<String, ServerError> {
         startServer(id)
@@ -62,7 +62,7 @@ public struct ServerEnvironment {
         sendMessage(id, text)
     }
 
-    func stopServer(id: AnyHashable) -> Effect<AnyHashable?, ServerError> {
+    func stopServer(id: AnyHashable) -> Effect<AnyHashable, ServerError> {
         stopServer(id)
     }
 }
