@@ -47,6 +47,8 @@ class GRPCServer {
         return Effect.run { subscriber in
             dependencies[id]?.simpleMessageSubscriber = subscriber
 
+            subscriber.send(.subscriptionCreated)
+
             return AnyCancellable {
                 dependencies[id]?.simpleMessageSubscriber = nil
             }

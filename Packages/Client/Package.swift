@@ -2,15 +2,15 @@
 import PackageDescription
 
 let package = Package(
-    name: "Server",
+    name: "Client",
     platforms: [
         .iOS(.v14),
         .macOS(.v11)
     ],
     products: [
         .library(
-            name: "Server",
-            targets: ["Server"]),
+            name: "Client",
+            targets: ["Client"]),
     ],
     dependencies: [
         .package(url: "https://github.com/pointfreeco/swift-composable-architecture", from: "0.18.0"),
@@ -18,13 +18,13 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "Server",
+            name: "Client",
             dependencies: [
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "GRPC", package: "grpc-swift")
             ]),
         .testTarget(
-            name: "ServerTests",
-            dependencies: ["Server"]),
+            name: "ClientTests",
+            dependencies: ["Client"]),
     ]
 )

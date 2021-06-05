@@ -45,7 +45,7 @@ final class ServerTests: XCTestCase {
                                                         .eraseToEffect()
                                                 })
 
-        let store = TestStore(initialState: ServerState(),
+        let store = TestStore(initialState: ServerState(receivedMessage: .some(.init())),
                               reducer: serverReducer,
                               environment: testEnvironment)
 
@@ -54,6 +54,7 @@ final class ServerTests: XCTestCase {
         scheduler.advance()
 
         store.receive(.serverStopped(.success(4711))) {
+            $0.receivedMessage = nil
             $0.address = nil
             $0.isRunning = false
         }

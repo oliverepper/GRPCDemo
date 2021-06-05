@@ -2,7 +2,13 @@
 <Workspace
    version = "1.0">
    <FileRef
+      location = "group:Packages/Client">
+   </FileRef>
+   <FileRef
       location = "group:Packages/Server">
+   </FileRef>
+   <FileRef
+      location = "group:GRPCClientApp/GRPCClientApp.xcodeproj">
    </FileRef>
    <FileRef
       location = "group:GRPCServerApp/GRPCServerApp.xcodeproj">

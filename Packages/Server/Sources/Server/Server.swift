@@ -138,6 +138,7 @@ public let serverReducer = Reducer<ServerState, ServerAction, ServerEnvironment>
     case .serverStopped(.success(let id)):
         state.isRunning = false
         state.address = nil
+        state.receivedMessage = nil
         return .none
 
     case .serverStopped(.failure(let error)):
@@ -178,6 +179,7 @@ public let serverReducer = Reducer<ServerState, ServerAction, ServerEnvironment>
     case .alertDismissed(let message):
         state.receivedMessage = message
         return .none
+
     }
 }
 
